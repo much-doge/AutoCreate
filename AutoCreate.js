@@ -21,7 +21,7 @@ const SCRIPT_PROPERTIES = PropertiesService.getScriptProperties();
 
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu("Document Engine")
+    .createMenu("AutoCreate")
     .addItem("Setup", "showSetupDialog")
     .addItem("Process Rows", "processRows")
     .addToUi();
@@ -104,7 +104,7 @@ function showSetupDialog() {
       </head>
       <body>
         <div class="container">
-          <h3>Document Engine Setup</h3>
+          <h3>AutoCreate Setup</h3>
 
           <label>Slides Template URL</label>
           <input type="text" id="template">
