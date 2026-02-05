@@ -3,8 +3,8 @@ const SCRIPT_PROPERTIES = PropertiesService.getScriptProperties();
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("Document Engine")
-    .addItem("Setup", "showSetupDialog")
-    .addItem("Process Rows", "processRows")
+    .addItem("Setup (This Sheet)", "showSetupDialog")
+    .addItem("Process Active Sheet", "processRows")
     .addToUi();
 }
 
@@ -13,55 +13,39 @@ function onOpen() {
 ================================ */
 
 function showSetupDialog() {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const sheetName = sheet.getName();
+  const config = getSheetConfig(sheetName);
+
   const html = HtmlService.createHtmlOutput(`
     <html>
       <head>
         <style>
           body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, 
-                         "Helvetica Neue", Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
             padding: 24px;
             background: #f8f9fa;
             color: #202124;
           }
-
-          h3 {
-            margin-top: 0;
-            font-weight: 600;
-            font-size: 18px;
-          }
-
+          h3 { margin-top: 0; font-weight: 600; }
           label {
             display: block;
-            margin-top: 16px;
-            margin-bottom: 6px;
+            margin-top: 14px;
             font-size: 13px;
             font-weight: 500;
             color: #5f6368;
           }
-
           input, textarea {
             width: 100%;
-            padding: 8px 10px;
+            padding: 8px;
             border: 1px solid #dadce0;
             border-radius: 6px;
             font-size: 13px;
             box-sizing: border-box;
-            transition: border 0.2s ease;
           }
-
-          input:focus, textarea:focus {
-            outline: none;
-            border: 1px solid #1a73e8;
-          }
-
-          textarea {
-            min-height: 100px;
-            resize: vertical;
-          }
-
+          textarea { min-height: 90px; }
           button {
-            margin-top: 24px;
+            margin-top: 20px;
             width: 100%;
             padding: 10px;
             background: #1a73e8;
@@ -69,44 +53,32 @@ function showSetupDialog() {
             border: none;
             border-radius: 6px;
             font-size: 14px;
-            font-weight: 500;
             cursor: pointer;
-            transition: background 0.2s ease;
-          }
-
-          button:hover {
-            background: #1557b0;
-          }
-
-          .container {
-            max-width: 480px;
           }
         </style>
       </head>
       <body>
-        <div class="container">
-          <h3>Document Engine Setup</h3>
+        <h3>Setup for Sheet: ${sheetName}</h3>
 
-          <label>Slides Template URL</label>
-          <input type="text" id="template">
+        <label>Slides Template URL</label>
+        <input type="text" id="template" value="${config.template || ""}">
 
-          <label>Output Folder URL</label>
-          <input type="text" id="folder">
+        <label>Output Folder URL</label>
+        <input type="text" id="folder" value="${config.folder || ""}">
 
-          <label>File Name Field (column header)</label>
-          <input type="text" id="filename">
+        <label>File Name Field (column header)</label>
+        <input type="text" id="filename" value="${config.filename || ""}">
 
-          <label>Email Field (column header)</label>
-          <input type="text" id="email">
+        <label>Email Field (column header)</label>
+        <input type="text" id="email" value="${config.email || ""}">
 
-          <label>Email Subject</label>
-          <input type="text" id="subject">
+        <label>Email Subject</label>
+        <input type="text" id="subject" value="${config.subject || ""}">
 
-          <label>Email Body Template</label>
-          <textarea id="body"></textarea>
+        <label>Email Body Template</label>
+        <textarea id="body">${config.body || ""}</textarea>
 
-          <button onclick="save()">Save Configuration</button>
-        </div>
+        <button onclick="save()">Save Configuration</button>
 
         <script>
           function save() {
@@ -118,7 +90,7 @@ function showSetupDialog() {
               subject: document.getElementById("subject").value,
               body: document.getElementById("body").value
             };
-            google.script.run.saveSetup(data);
+            google.script.run.saveSetupForSheet(data);
             google.script.host.close();
           }
         </script>
@@ -128,11 +100,25 @@ function showSetupDialog() {
   .setWidth(520)
   .setHeight(650);
 
-  SpreadsheetApp.getUi().showModalDialog(html, "Setup");
+  SpreadsheetApp.getUi().showModalDialog(html, "Sheet Configuration");
 }
 
-function saveSetup(data) {
-  SCRIPT_PROPERTIES.setProperties(data);
+function saveSetupForSheet(data) {
+  const sheetName = SpreadsheetApp.getActiveSheet().getName();
+  Object.keys(data).forEach(key => {
+    SCRIPT_PROPERTIES.setProperty(`${sheetName}_${key}`, data[key]);
+  });
+}
+
+function getSheetConfig(sheetName) {
+  return {
+    template: SCRIPT_PROPERTIES.getProperty(`${sheetName}_template`),
+    folder: SCRIPT_PROPERTIES.getProperty(`${sheetName}_folder`),
+    filename: SCRIPT_PROPERTIES.getProperty(`${sheetName}_filename`),
+    email: SCRIPT_PROPERTIES.getProperty(`${sheetName}_email`),
+    subject: SCRIPT_PROPERTIES.getProperty(`${sheetName}_subject`),
+    body: SCRIPT_PROPERTIES.getProperty(`${sheetName}_body`)
+  };
 }
 
 /* ==============================
@@ -141,36 +127,35 @@ function saveSetup(data) {
 
 function processRows() {
   const sheet = SpreadsheetApp.getActiveSheet();
+  const sheetName = sheet.getName();
+  const config = getSheetConfig(sheetName);
+
+  if (!config.template || !config.folder) {
+    SpreadsheetApp.getUi().alert("This sheet is not configured yet.");
+    return;
+  }
+
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
 
-  const templateId = extractId(SCRIPT_PROPERTIES.getProperty("template"));
-  const folderId = extractId(SCRIPT_PROPERTIES.getProperty("folder"));
-  const filenameField = SCRIPT_PROPERTIES.getProperty("filename");
-  const emailField = SCRIPT_PROPERTIES.getProperty("email");
-  const subjectTemplate = SCRIPT_PROPERTIES.getProperty("subject");
-  const bodyTemplate = SCRIPT_PROPERTIES.getProperty("body");
+  const templateId = extractId(config.template);
+  const folderId = extractId(config.folder);
 
   const folder = DriveApp.getFolderById(folderId);
 
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     const rowObj = {};
-
-    headers.forEach((h, idx) => {
-      rowObj[h] = row[idx];
-    });
+    headers.forEach((h, idx) => rowObj[h] = row[idx]);
 
     const copy = DriveApp.getFileById(templateId).makeCopy(folder);
     const presentation = SlidesApp.openById(copy.getId());
 
     replacePlaceholders(presentation, rowObj);
-
     presentation.saveAndClose();
 
     const pdf = copy.getBlob().getAs("application/pdf");
-    const fileName = rowObj[filenameField] + ".pdf";
-
+    const fileName = rowObj[config.filename] + ".pdf";
     const pdfFile = folder.createFile(pdf).setName(fileName);
 
     pdfFile.setSharing(
@@ -178,12 +163,10 @@ function processRows() {
       DriveApp.Permission.VIEW
     );
 
-    const email = rowObj[emailField];
+    const subject = replaceText(config.subject, rowObj);
+    const body = replaceText(config.body, rowObj);
 
-    const subject = replaceText(subjectTemplate, rowObj);
-    const body = replaceText(bodyTemplate, rowObj);
-
-    GmailApp.sendEmail(email, subject, body, {
+    GmailApp.sendEmail(rowObj[config.email], subject, body, {
       attachments: [pdfFile]
     });
 
@@ -199,9 +182,7 @@ function processRows() {
 ================================ */
 
 function replacePlaceholders(presentation, data) {
-  const slides = presentation.getSlides();
-
-  slides.forEach(slide => {
+  presentation.getSlides().forEach(slide => {
     Object.keys(data).forEach(key => {
       slide.replaceAllText(`<<${key}>>`, data[key]);
     });
@@ -209,17 +190,14 @@ function replacePlaceholders(presentation, data) {
 }
 
 function replaceText(template, data) {
-  let result = template;
+  let result = template || "";
   Object.keys(data).forEach(key => {
-    result = result.replace(
-      new RegExp(`<<${key}>>`, 'g'),
-      data[key]
-    );
+    result = result.replace(new RegExp(`<<${key}>>`, 'g'), data[key]);
   });
   return result;
 }
 
 function extractId(url) {
-  const match = url.match(/[-\w]{25,}/);
+  const match = url.match(/[-\\w]{25,}/);
   return match ? match[0] : null;
 }
