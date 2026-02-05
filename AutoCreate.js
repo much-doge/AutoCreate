@@ -21,7 +21,7 @@ const SCRIPT_PROPERTIES = PropertiesService.getScriptProperties();
 
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu("Document Engine")
+    .createMenu("AutoCreate")
     .addItem("Setup (This Sheet)", "showSetupDialog")
     .addItem("Process Active Sheet", "processRows")
     .addToUi();
