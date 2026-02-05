@@ -17,228 +17,188 @@
  */
 
 
-const SCRIPT_PROPERTIES = PropertiesService.getScriptProperties();
+const CONFIGS_SHEET_NAME = 'AutoCreate_Configs';
 
+/* ========== ON-OPEN: Add menu ========== */
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("AutoCreate")
-    .addItem("Setup", "showSetupDialog")
-    .addItem("Process Rows", "processRows")
+    .addItem("Manage Setups", "showConfigManager")
+    .addItem("Process a Setup", "chooseAndProcessJob")
     .addToUi();
 }
 
-/* ==============================
-   SETUP DIALOG
-================================ */
+/* ========== CONFIG SHEET ========== */
 
-function showSetupDialog() {
-  const html = HtmlService.createHtmlOutput(`
-    <html>
-      <head>
-        <style>
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, 
-                         "Helvetica Neue", Arial, sans-serif;
-            padding: 24px;
-            background: #f8f9fa;
-            color: #202124;
-          }
-
-          h3 {
-            margin-top: 0;
-            font-weight: 600;
-            font-size: 18px;
-          }
-
-          label {
-            display: block;
-            margin-top: 16px;
-            margin-bottom: 6px;
-            font-size: 13px;
-            font-weight: 500;
-            color: #5f6368;
-          }
-
-          input, textarea {
-            width: 100%;
-            padding: 8px 10px;
-            border: 1px solid #dadce0;
-            border-radius: 6px;
-            font-size: 13px;
-            box-sizing: border-box;
-            transition: border 0.2s ease;
-          }
-
-          input:focus, textarea:focus {
-            outline: none;
-            border: 1px solid #1a73e8;
-          }
-
-          textarea {
-            min-height: 100px;
-            resize: vertical;
-          }
-
-          button {
-            margin-top: 24px;
-            width: 100%;
-            padding: 10px;
-            background: #1a73e8;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background 0.2s ease;
-          }
-
-          button:hover {
-            background: #1557b0;
-          }
-
-          .container {
-            max-width: 480px;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <h3>AutoCreate Setup</h3>
-
-          <label>Slides Template URL</label>
-          <input type="text" id="template">
-
-          <label>Output Folder URL</label>
-          <input type="text" id="folder">
-
-          <label>File Name Field (column header)</label>
-          <input type="text" id="filename">
-
-          <label>Email Field (column header)</label>
-          <input type="text" id="email">
-
-          <label>Email Subject</label>
-          <input type="text" id="subject">
-
-          <label>Email Body Template</label>
-          <textarea id="body"></textarea>
-
-          <button onclick="save()">Save Configuration</button>
-        </div>
-
-        <script>
-          function save() {
-            const data = {
-              template: document.getElementById("template").value,
-              folder: document.getElementById("folder").value,
-              filename: document.getElementById("filename").value,
-              email: document.getElementById("email").value,
-              subject: document.getElementById("subject").value,
-              body: document.getElementById("body").value
-            };
-            google.script.run.saveSetup(data);
-            google.script.host.close();
-          }
-        </script>
-      </body>
-    </html>
-  `)
-  .setWidth(520)
-  .setHeight(650);
-
-  SpreadsheetApp.getUi().showModalDialog(html, "Setup");
+// Ensure config sheet exists and set up columns
+function ensureConfigsSheet() {
+  let ss = SpreadsheetApp.getActive();
+  let sheet = ss.getSheetByName(CONFIGS_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIGS_SHEET_NAME, 0);
+    sheet.hideSheet();
+    sheet.getRange(1, 1, 1, 8).setValues([[
+      "JobName",           // Human-friendly name
+      "DataSheet",         // Merge sheet name
+      "SlidesTemplateURL", // Slides template URL
+      "OutputFolderURL",   // Folder URL for generated files
+      "FileNameField",     // Column header for file name
+      "EmailField",        // Column header for recipient email
+      "EmailSubject",      // Email subject template
+      "EmailBody"          // Email body template
+    ]]);
+  }
+  return sheet;
 }
 
-function saveSetup(data) {
-  SCRIPT_PROPERTIES.setProperties(data);
+/* ========== CONFIG MANAGEMENT UI ========== */
+
+function showConfigManager() {
+  // Shows a little help and asks user to unhide then edit config sheet
+  ensureConfigsSheet();
+  SpreadsheetApp.getUi().alert(
+    'To add/edit mail merge jobs, unhide the "' + CONFIGS_SHEET_NAME + '" sheet in the spreadsheet, ' +
+    'then add one row for each template/job/config (see column headers). ' +
+    '\n\nHide it again after editing if you want.'
+  );
 }
 
-/* ==============================
-   PROCESSING ENGINE
-================================ */
+/* ========== SELECT AND PROCESS A JOB ========== */
 
-function processRows() {
-  const sheet = SpreadsheetApp.getActiveSheet();
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
+function chooseAndProcessJob() {
+  const jobs = getAllJobs();
+  if (jobs.length === 0) {
+    SpreadsheetApp.getUi().alert('No setups found!\n\nUse "Manage Setups" menu to add some first.');
+    return;
+  }
+  // Build selection prompt
+  const ui = SpreadsheetApp.getUi();
+  let html = '<html><body style="font-family:Arial;padding:1em"><b>Select a setup/job to process:</b><br><br>';
+  jobs.forEach((job, idx) => {
+    html += `<button style="margin:0.5em 0;padding:6px 16px;" onclick="google.script.run.processJobByIndex(${idx});window.close()">${escapeHtml(job.JobName)}</button><br>`;
+  });
+  html += '</body></html>';
+  ui.showModalDialog(HtmlService.createHtmlOutput(html).setWidth(320).setHeight(100 + jobs.length * 38), 'Run AutoCreate Setup');
+}
 
-  const templateId = extractId(SCRIPT_PROPERTIES.getProperty("template"));
-  const folderId = extractId(SCRIPT_PROPERTIES.getProperty("folder"));
-  const filenameField = SCRIPT_PROPERTIES.getProperty("filename");
-  const emailField = SCRIPT_PROPERTIES.getProperty("email");
-  const subjectTemplate = SCRIPT_PROPERTIES.getProperty("subject");
-  const bodyTemplate = SCRIPT_PROPERTIES.getProperty("body");
+/* ========== CORE ENGINE: GET JOBS, PROCESS ONE ========== */
 
-  const folder = DriveApp.getFolderById(folderId);
-
+// Read all jobs from the config sheet
+function getAllJobs() {
+  let sheet = ensureConfigsSheet();
+  let data = sheet.getDataRange().getValues();
+  let headers = data[0];
+  let jobs = [];
   for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const rowObj = {};
+    let job = {};
+    data[i].forEach((v, j) => job[headers[j]] = v);
+    if (job.JobName && job.DataSheet) jobs.push(job);
+  }
+  return jobs;
+}
 
-    headers.forEach((h, idx) => {
-      rowObj[h] = row[idx];
-    });
+// Called by HTML menu
+function processJobByIndex(idx) {
+  let jobs = getAllJobs();
+  if (idx < 0 || idx >= jobs.length) throw new Error('Invalid job index');
+  processJob(jobs[idx]);
+}
 
+// Main processing logic
+function processJob(job) {
+  // Step 1: Setup and safe extraction
+  let templateId = extractId(job.SlidesTemplateURL);
+  let folderId   = extractId(job.OutputFolderURL);
+  let fileNameField = job.FileNameField;
+  let emailField    = job.EmailField;
+  let subjectTemplate = job.EmailSubject;
+  let bodyTemplate    = job.EmailBody;
+  let dataSheet = SpreadsheetApp.getActive().getSheetByName(job.DataSheet);
+
+  if (!dataSheet) throw new Error('Data sheet not found: ' + job.DataSheet);
+
+  // Step 2: Prepare to process data
+  let data = dataSheet.getDataRange().getValues();
+  let headers = data[0];
+  let folder = DriveApp.getFolderById(folderId);
+
+  // Make sure there is a result column for links
+  let outputCol = headers.length + 1;
+  if (dataSheet.getLastColumn() === headers.length) {
+    dataSheet.insertColumnAfter(headers.length);
+    dataSheet.getRange(1, outputCol).setValue('Doc/PDF URL');
+  }
+
+  let sentCount = 0;
+
+  // Step 3: Process each row (Reasoning: all prep BEFORE sending e-mails)
+  for (let i = 1; i < data.length; i++) {
+    const rowData = data[i];
+    // Skip blank data rows
+    if (!rowData || !rowData.some(val => val && val.toString().trim())) continue;
+
+    // Map data by headers
+    let rowObj = {};
+    headers.forEach((h, idx) => rowObj[h] = rowData[idx]);
+
+    // Prepare merged doc
     const copy = DriveApp.getFileById(templateId).makeCopy(folder);
     const presentation = SlidesApp.openById(copy.getId());
-
     replacePlaceholders(presentation, rowObj);
-
     presentation.saveAndClose();
 
+    // Export as PDF
     const pdf = copy.getBlob().getAs("application/pdf");
-    const fileName = rowObj[filenameField] + ".pdf";
-
+    const fileName = (rowObj[fileNameField] || ("Document_" + (i + 1))) + ".pdf";
     const pdfFile = folder.createFile(pdf).setName(fileName);
+    pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
-    pdfFile.setSharing(
-      DriveApp.Access.ANYONE_WITH_LINK,
-      DriveApp.Permission.VIEW
-    );
-
-    const email = rowObj[emailField];
-
+    // Compose email
+    const emailTo = rowObj[emailField];
     const subject = replaceText(subjectTemplate, rowObj);
-    const body = replaceText(bodyTemplate, rowObj);
+    const body    = replaceText(bodyTemplate, rowObj);
 
-    GmailApp.sendEmail(email, subject, body, {
+    // Record file link in output col
+    dataSheet.getRange(i+1, outputCol).setValue(pdfFile.getUrl());
+
+    // SEND (dispatch after all prep)
+    GmailApp.sendEmail(emailTo, subject, body, {
       attachments: [pdfFile]
     });
 
-    sheet.getRange(i + 1, headers.length + 1)
-      .setValue(pdfFile.getUrl());
-
-    copy.setTrashed(true);
+    sentCount++;
+    copy.setTrashed(true); // Clean up copied SLIDES
   }
+
+  SpreadsheetApp.getUi().alert('Processed ' + sentCount + ' rows for setup: ' + job.JobName);
 }
 
-/* ==============================
-   HELPERS
-================================ */
+/* ========== HELPERS ========== */
 
 function replacePlaceholders(presentation, data) {
   const slides = presentation.getSlides();
-
   slides.forEach(slide => {
     Object.keys(data).forEach(key => {
-      slide.replaceAllText(`<<${key}>>`, data[key]);
+      slide.replaceAllText(`<<${key}>>`, String(data[key] ?? ''));
     });
   });
 }
 
 function replaceText(template, data) {
-  let result = template;
+  let result = template || '';
   Object.keys(data).forEach(key => {
-    result = result.replace(
-      new RegExp(`<<${key}>>`, 'g'),
-      data[key]
-    );
+    result = result.replace(new RegExp(`<<${key}>>`, 'g'), data[key]);
   });
   return result;
 }
 
 function extractId(url) {
-  const match = url.match(/[-\w]{25,}/);
+  let match = url.match(/[-\w]{25,}/);
   return match ? match[0] : null;
+}
+
+function escapeHtml(str) {
+  return String(str || '').replace(/[&<>"']/g, function (m) {
+    return ({'&': '&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m];
+  });
 }
