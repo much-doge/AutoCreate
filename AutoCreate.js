@@ -14,44 +14,119 @@ function onOpen() {
 
 function showSetupDialog() {
   const html = HtmlService.createHtmlOutput(`
-    <h3>Autocrat Clone Setup</h3>
-    <label>Slides Template URL:</label><br>
-    <input type="text" id="template" style="width:100%"><br><br>
+    <html>
+      <head>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, 
+                         "Helvetica Neue", Arial, sans-serif;
+            padding: 24px;
+            background: #f8f9fa;
+            color: #202124;
+          }
 
-    <label>Output Folder URL:</label><br>
-    <input type="text" id="folder" style="width:100%"><br><br>
+          h3 {
+            margin-top: 0;
+            font-weight: 600;
+            font-size: 18px;
+          }
 
-    <label>File Name Field (column header):</label><br>
-    <input type="text" id="filename"><br><br>
+          label {
+            display: block;
+            margin-top: 16px;
+            margin-bottom: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #5f6368;
+          }
 
-    <label>Email Field (column header):</label><br>
-    <input type="text" id="email"><br><br>
+          input, textarea {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            font-size: 13px;
+            box-sizing: border-box;
+            transition: border 0.2s ease;
+          }
 
-    <label>Email Subject:</label><br>
-    <input type="text" id="subject" style="width:100%"><br><br>
+          input:focus, textarea:focus {
+            outline: none;
+            border: 1px solid #1a73e8;
+          }
 
-    <label>Email Body Template:</label><br>
-    <textarea id="body" style="width:100%;height:100px"></textarea><br><br>
+          textarea {
+            min-height: 100px;
+            resize: vertical;
+          }
 
-    <button onclick="save()">Save</button>
+          button {
+            margin-top: 24px;
+            width: 100%;
+            padding: 10px;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s ease;
+          }
 
-    <script>
-      function save() {
-        const data = {
-          template: document.getElementById("template").value,
-          folder: document.getElementById("folder").value,
-          filename: document.getElementById("filename").value,
-          email: document.getElementById("email").value,
-          subject: document.getElementById("subject").value,
-          body: document.getElementById("body").value
-        };
-        google.script.run.saveSetup(data);
-        google.script.host.close();
-      }
-    </script>
+          button:hover {
+            background: #1557b0;
+          }
+
+          .container {
+            max-width: 480px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h3>Document Engine Setup</h3>
+
+          <label>Slides Template URL</label>
+          <input type="text" id="template">
+
+          <label>Output Folder URL</label>
+          <input type="text" id="folder">
+
+          <label>File Name Field (column header)</label>
+          <input type="text" id="filename">
+
+          <label>Email Field (column header)</label>
+          <input type="text" id="email">
+
+          <label>Email Subject</label>
+          <input type="text" id="subject">
+
+          <label>Email Body Template</label>
+          <textarea id="body"></textarea>
+
+          <button onclick="save()">Save Configuration</button>
+        </div>
+
+        <script>
+          function save() {
+            const data = {
+              template: document.getElementById("template").value,
+              folder: document.getElementById("folder").value,
+              filename: document.getElementById("filename").value,
+              email: document.getElementById("email").value,
+              subject: document.getElementById("subject").value,
+              body: document.getElementById("body").value
+            };
+            google.script.run.saveSetup(data);
+            google.script.host.close();
+          }
+        </script>
+      </body>
+    </html>
   `)
-  .setWidth(500)
-  .setHeight(600);
+  .setWidth(520)
+  .setHeight(650);
 
   SpreadsheetApp.getUi().showModalDialog(html, "Setup");
 }
